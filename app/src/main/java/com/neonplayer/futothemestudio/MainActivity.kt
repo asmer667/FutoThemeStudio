@@ -76,7 +76,8 @@ data class ThemeState(
     val keyImages: Map<String, ByteArray> = emptyMap(), val keyImageNames: Map<String, String> = emptyMap(),
     val arabicFontName: String? = null, val arabicFontBytes: ByteArray? = null,
     val englishFontName: String? = null, val englishFontBytes: ByteArray? = null,
-    val exportFontLanguage: String = "العربية"
+    val exportFontLanguage: String = "العربية",
+    val allColors: Map<String, Int> = emptyMap()
 )
 
 private fun defaultGroups(): Map<KeyGroup, GroupStyle> = KeyGroup.values().associateWith { GroupStyle() }
@@ -481,14 +482,86 @@ private fun readTheme(context:Context,uri:Uri):ThemeState{
         while(true){val e=z.nextEntry?:break;if(!e.isDirectory)entries[e.name]=z.readBytes()}
     }
     val txt=entries["theme.txt"]?.toString(Charsets.UTF_8)?:error("theme.txt غير موجود")
-    var t=ThemeState()
+
+    // نقرأ كل الألوان ديناميكيًا
+    val allCols=mutableMapOf<String,Int>()
+    val colorRegex=Regex("""^([a-z_]+)\s*=\s*"(#[0-9A-Fa-f]{6,8})"""",RegexOption.MULTILINE)
+    colorRegex.findAll(txt).forEach{m->
+        val key=m.groupValues[1]
+        val hex=m.groupValues[2]
+        parseColor(hex)?.let{allCols[key]=it}
+    }
+
     fun q(k:String)=Regex("""^$k\s*=\s*"([^"]*)"""",RegexOption.MULTILINE).find(txt)?.groupValues?.get(1)
-    fun col(k:String)=Regex("""^$k\s*=\s*"(#[0-9A-Fa-f]{6,8})"""",RegexOption.MULTILINE).find(txt)?.groupValues?.get(1)?.let(::parseColor)
-    t=t.copy(name=q("name")?:t.name,author=q("author")?:"",id=q("id")?:t.id,description=q("description")?:t.description,primary=col("primary")?:t.primary,background=col("background")?:t.background,background2=col("surface_container")?:t.background2)
+    fun col(k:String)=allCols[k]
+
+    var t=ThemeState()
+
+    // نبني GroupStyle من الألوان المُقرأة
+    val letterBg=col("keyboard_container") ?: col("keyboard_surface") ?: col("surface")
+    val onKb=col("on_keyboard_container") ?: col("on_surface") ?: col("on_background")
+
+    val letterStyle=if(letterBg!=null && onKb!=null)
+        (t.groupStyles[KeyGroup.LETTERS]?:GroupStyle()).copy(
+            color1=letterBg,
+            color2=col("keyboard_container_variant")?:lighten(letterBg),
+            pressed1=col("keyboard_press")?:letterBg,
+            pressed2=col("keyboard_container_pressed")?:lighten(letterBg),
+            textColor=onKb
+        )
+    else t.groupStyles[KeyGroup.LETTERS]?:GroupStyle()
+
+    // top style
+    val topBg=col("keyboard_container_variant")
+    val topStyle=if(topBg!=null)
+        (t.groupStyles[KeyGroup.TOP]?:GroupStyle()).copy(
+            color1=topBg,
+            color2=col("surface_variant")?:lighten(topBg),
+            textColor=onKb ?: 0xFF000000.toInt()
+        )
+    else t.groupStyles[KeyGroup.TOP]?:GroupStyle()
+
+    t=t.copy(
+        name=q("name")?:t.name,
+        author=q("author")?:"",
+        id=q("id")?:t.id,
+        description=q("description")?:t.description,
+        primary=col("primary")?:t.primary,
+        onPrimary=col("on_primary")?:t.onPrimary,
+        background=col("background")?:t.background,
+        background2=col("surface_container")?:t.background2,
+        groupStyles=t.groupStyles + mapOf(
+            KeyGroup.LETTERS to letterStyle,
+            KeyGroup.TOP to topStyle
+        ),
+        allColors=allCols
+    )
+
+    // scale_text
     Regex("""^scale_text\s*=\s*([0-9.]+)""",RegexOption.MULTILINE).find(txt)?.groupValues?.get(1)?.toFloatOrNull()?.let{t=t.copy(textScale=it)}
-    val font=q("font");val bg=q("image")
-    if(font!=null)entries[font]?.let{t=t.copy(arabicFontName=font,arabicFontBytes=it)}
-    if(bg!=null)t=t.copy(backgroundFileName=bg,backgroundImage=entries[bg])
+
+    // font
+    val fontName=q("font")
+    if(fontName!=null){
+        val actualName=if(entries.containsKey(fontName)) fontName else "$fontName.ttf"
+        entries[actualName]?.let{t=t.copy(arabicFontName=actualName,arabicFontBytes=it)}
+        if(t.arabicFontName==null) entries[fontName]?.let{t=t.copy(arabicFontName=fontName,arabicFontBytes=it)}
+    }
+
+    // background
+    val bgName=q("image")
+    if(bgName!=null)entries[bgName]?.let{t=t.copy(backgroundFileName=bgName,backgroundImage=it)}
+
+    // key images
+    val keyImages=mutableMapOf<String,ByteArray>()
+    entries.forEach{(name,bytes)->
+        if(name.startsWith("Key-") && name.endsWith(".png")){
+            val keyName=name.removePrefix("Key-").removeSuffix(".png")
+            keyImages[keyName]=bytes
+        }
+    }
+    if(keyImages.isNotEmpty()) t=t.copy(keyImages=t.keyImages+keyImages)
+
     return t
 }
 
@@ -556,6 +629,34 @@ private fun buildThemeTxt(t:ThemeState,files:List<String>):String {
     line("[colors]")
     line("primary = \"${c(t.primary)}\"")
     line("on_primary = \"${c(t.onPrimary)}\"")
+        line("primary_container = "${c(lighten(t.primary))}"")
+        line("on_primary_container = "${c(t.onPrimary)}"")
+        line("inverse_primary = "${c(lighten(t.primary))}"")
+        line("secondary = "${c(t.primary)}"")
+        line("on_secondary = "${c(t.onPrimary)}"")
+        line("secondary_container = "${c(lighten(t.primary))}"")
+        line("on_secondary_container = "${c(t.onPrimary)}"")
+        line("tertiary = "${c(t.primary)}"")
+        line("on_tertiary = "${c(t.onPrimary)}"")
+        line("tertiary_container = "${c(t.background2)}"")
+        line("on_tertiary_container = "${c(letter.textColor)}"")
+        line("surface_tint = "${c(t.primary)}"")
+        line("inverse_surface = "${c(t.background2)}"")
+        line("inverse_on_surface = "${c(letter.textColor)}"")
+        line("error = "#FFFF4D5E"")
+        line("on_error = "#FFFFFFFF"")
+        line("error_container = "#FF5A1018"")
+        line("on_error_container = "#FFFFECEF"")
+        line("outline = "${c(letter.textColor)}"")
+        line("outline_variant = "${c(t.background2)}"")
+        line("scrim = "#FF000000"")
+        line("surface_bright = "${c(lighten(t.background))}"")
+        line("surface_dim = "${c(t.background)}"")
+        line("surface_container = "${c(t.background)}"")
+        line("surface_container_high = "${c(t.background2)}"")
+        line("surface_container_highest = "${c(t.background2)}"")
+        line("surface_container_low = "${c(t.background)}"")
+        line("surface_container_lowest = "${c(t.background)}"")
     line("background = \"${c(t.background)}\"")
     line("on_background = \"${c(letter.textColor)}\"")
     line("surface = \"${c(t.background)}\"")
@@ -570,6 +671,9 @@ private fun buildThemeTxt(t:ThemeState,files:List<String>):String {
     line("keyboard_press = \"${c(letter.pressed1)}\"")
     line("keyboard_container_pressed = \"${c(letter.pressed2)}\"")
     line("on_keyboard_container_pressed = \"${c(letter.textColor)}\"")
+        // أي ألوان إضافية في allColors لم تُكتب بعد
+        val written=setOf("primary","on_primary","primary_container","on_primary_container","inverse_primary","secondary","on_secondary","secondary_container","on_secondary_container","tertiary","on_tertiary","tertiary_container","on_tertiary_container","background","on_background","surface","on_surface","surface_variant","on_surface_variant","surface_tint","inverse_surface","inverse_on_surface","error","on_error","error_container","on_error_container","outline","outline_variant","scrim","surface_bright","surface_dim","surface_container","surface_container_high","surface_container_highest","surface_container_low","surface_container_lowest","keyboard_surface","keyboard_surface_dim","keyboard_container","keyboard_container_variant","on_keyboard_container","keyboard_press","keyboard_container_pressed","on_keyboard_container_pressed")
+        t.allColors.forEach{(k,v)->if(!written.contains(k)) line("$k = \"${c(v)}\"")}
     line()
     val fontName=if(t.exportFontLanguage=="العربية")t.arabicFontName else t.englishFontName
     if(fontName!=null&&files.contains(fontName)){line("[options.font]");line("font = \"${toml(fontName)}\"");line()}
