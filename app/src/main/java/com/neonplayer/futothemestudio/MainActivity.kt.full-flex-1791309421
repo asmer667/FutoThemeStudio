@@ -494,40 +494,7 @@ private fun readTheme(context:Context,uri:Uri):ThemeState{
 
 private fun validateTheme(t:ThemeState){require(t.name.isNotBlank()){"اسم الثيم فارغ"};require(t.id.isNotBlank()){"ID الثيم فارغ"};require(t.groupStyles.isNotEmpty()){"لا توجد إعدادات أزرار"}}
 private fun exportThemeToUri(context:Context,t:ThemeState,uri:Uri){val assets=buildAssets(t);val txt=buildThemeTxt(t,assets.keys.toList());ZipOutputStream(BufferedOutputStream(context.contentResolver.openOutputStream(uri)!!)).use{z->z.putNextEntry(ZipEntry("theme.txt"));z.write(txt.toByteArray(Charsets.UTF_8));z.closeEntry();assets.toSortedMap().forEach{(n,b)->z.putNextEntry(ZipEntry(n));z.write(b);z.closeEntry()}}}
-private fun buildAssets(t:ThemeState):MutableMap<String,ByteArray>{
-    val a=mutableMapOf<String,ByteArray>()
-
-    // 1. أشكال كل مجموعة + كل زر
-    KeyGroup.values().forEach{g->
-        val s=t.groupStyles[g]?:GroupStyle()
-        val png=renderShapePng(shapeLibrary.getOrElse(s.shapeId){shapeLibrary[0]},s.color1,s.color2,s.fillMode,t.borderColor,t.borderWidth)
-        a["Shapes/group_${g.name.lowercase(Locale.US)}.png"]=png
-    }
-    t.keyOverrides.forEach{(k,s)->
-        val png=renderShapePng(shapeLibrary.getOrElse(s.shapeId){shapeLibrary[0]},s.color1,s.color2,s.fillMode,t.borderColor,t.borderWidth)
-        a["Shapes/key_${safe(k)}.png"]=png
-    }
-
-    // 2. صور الأزرار المخصصة — كل الصور في keyImages
-    t.keyImages.forEach{(k,b)->
-        val fname=if(k.startsWith("GROUP_")) "Key-${safe(k.substringAfter("GROUP_"))}.png" else "Key-${safe(k)}.png"
-        a[fname]=b
-    }
-
-    // 3. صورة الخلفية
-    t.backgroundImage?.let{a["background.png"]=it}
-
-    // 4. الخط — دائمًا .ttf
-    val fontBytes=if(t.exportFontLanguage=="العربية")t.arabicFontBytes else t.englishFontBytes
-    val fontName=if(t.exportFontLanguage=="العربية")t.arabicFontName else t.englishFontName
-    if(fontBytes!=null){
-        var fname=fontName?:"CustomFont.ttf"
-        if(!fname.endsWith(".ttf",true) && !fname.endsWith(".otf",true)) fname="$fname.ttf"
-        a[fname]=fontBytes
-    }
-
-    return a
-}
+private fun buildAssets(t:ThemeState):MutableMap<String,ByteArray>{val a=mutableMapOf<String,ByteArray>();KeyGroup.values().forEach{g->val s=t.groupStyles[g]?:GroupStyle();a["Shapes/group_${g.name.lowercase(Locale.US)}.png"]=renderShapePng(shapeLibrary.getOrElse(s.shapeId){shapeLibrary[0]},s.color1,s.color2,s.fillMode,t.borderColor,t.borderWidth)};t.keyOverrides.forEach{(k,s)->a["Shapes/key_${safe(k)}.png"]=renderShapePng(shapeLibrary.getOrElse(s.shapeId){shapeLibrary[0]},s.color1,s.color2,s.fillMode,t.borderColor,t.borderWidth)};t.keyImages.forEach{(k,b)->a["Key-${safe(k)}.png"]=b};t.backgroundImage?.let{a["background.png"]=it};val fontBytes=if(t.exportFontLanguage=="العربية")t.arabicFontBytes else t.englishFontBytes;val fontName=if(t.exportFontLanguage=="العربية")t.arabicFontName else t.englishFontName;fontBytes?.let{a[fontName?:"CustomFont.ttf"]=it};return a}
 private fun buildThemeTxt(t:ThemeState,files:List<String>):String {
     fun c(x:Int)=String.format(Locale.US,"#%08X",x)
     fun n(x:Float)=String.format(Locale.US,"%.3f",x)
