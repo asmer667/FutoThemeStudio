@@ -1,0 +1,15 @@
+Bundled font licenses
+
+Noto Sans / Noto Kufi Arabic
+Copyright 2022 The Noto Project Authors
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL
+
+Amiri
+Copyright 2010-2020 Khaled Hosny
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL
+
+The font files are bundled only as optional preview/export assets. Their
+license remains with their respective authors. The SIL Open Font License
+allows redistribution and embedding subject to its terms.

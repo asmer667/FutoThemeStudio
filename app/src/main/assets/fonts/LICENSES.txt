@@ -1,0 +1,4 @@
+The bundled Noto font files are from the Noto Fonts project and are distributed under the SIL Open Font License 1.1.
+See https://openfontlicense.org/ and https://github.com/notofonts for the upstream project and license text.
+
+These files are bundled for local theme preview/export in FUTO Theme Studio.
